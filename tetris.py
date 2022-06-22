@@ -14,7 +14,7 @@ BOARD_SIZE = (TILE_SIZE * 10, TILE_SIZE * 20)
 NEXT_OFFSET = (BOARD_OFFSET[0] + BOARD_SIZE[0] + 50, BOARD_OFFSET[1])
 NEXT_SIZE = (TILE_SIZE * 4, TILE_SIZE * 4)
 
-FPS = 60
+FPS = 60.0988
 
 BACKGROUND_COLOR = (10, 10, 10)
 GRID_COLOR = (30, 30, 30)
@@ -29,7 +29,8 @@ COLOR_4 = (224, 211, 13) # O
 COLOR_5 = (29, 224, 13) #  S
 COLOR_6 = (170, 13, 224) # T
 COLOR_7 = (234, 25, 25) #  Z
-PIECE_COLORS = [BACKGROUND_COLOR, COLOR_1, COLOR_2, COLOR_3, COLOR_4, COLOR_5, COLOR_6, COLOR_7]
+COLOR_8 = (255, 255, 255) # Line clear
+PIECE_COLORS = [BACKGROUND_COLOR, COLOR_1, COLOR_2, COLOR_3, COLOR_4, COLOR_5, COLOR_6, COLOR_7, COLOR_8]
 
 board = TetrisBoard.board
 
@@ -37,7 +38,7 @@ LEVEL_SPEEDS = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3,
 
 score = 0
 lines = 0
-level = 1
+level = 9
 
 piece_num = 0
 last_piece_num = 0
@@ -49,9 +50,18 @@ piece_size_offset = (0, 0)
 piece_array = [[0, 0],
                 [0, 0]]
 
+lines_to_clear = [0, 0]
 das_counter = 0
 frames_since_last_drop = 0
-frames_since_last_piece = 0
+frames_since_last_piece = 100
+frames_since_line_clear = 100
+state = "first_frame"
+# States:
+# first_frame
+# running
+# spawning
+# clearing
+# paused
 
 ccw_last_frame = False
 cw_last_frame = False
@@ -116,9 +126,16 @@ def get_piece_array(rotation=piece_rotation, piece=piece_num):
     return piece_array
 
 def draw_window():
-    global piece_array, TEXT_COLOR, score, lines, level
+    global piece_array, TEXT_COLOR, score, lines, level, state
     WINDOW.fill(BACKGROUND_COLOR)
     
+    if (state == "paused"):
+        font_size = 500
+        font = pygame.font.SysFont("impact", font_size)
+        level_disp = font.render("PAUSED", True, TEXT_COLOR)
+        WINDOW.blit(score_text, (WIDTH / 2.0 - score_text.get_width() / 2.0, HEIGHT / 2.0 - font_size / 2.0))
+        return
+
     # Draw tiles
     for y in range(20):
         for x in range(10):
@@ -184,10 +201,10 @@ def draw_window():
 
     pygame.display.update()
 
-
 def spawn_piece(piece_index: int):
-    global piece_num, piece_rotation, piece_position, run
-    # print("Spawning piece #" + str(piece_index))
+    global piece_num, piece_rotation, piece_position, run, state
+    if (state != "paused"):
+        state = "running"
     if (piece_index == 1):
         piece_num = 1
         piece_rotation = 0
@@ -222,32 +239,9 @@ def spawn_piece(piece_index: int):
 def clear_lines(line_indices):
     # Start at that line, make it the line above
     # Go to the next line, same thing
-    # line_index = 0
-    # line_indices[line_index] = 19
-    # go to line 19, 18, 17, 16 ... 2, 1, set 0 to all 0s
-    # 0  -> 19
-    # 1  -> 18
-    # 2  -> 17
-    # 3  -> 16
-    # 4  -> 15
-    # 5  -> 14
-    # 6  -> 13
-    # 7  -> 12
-    # 8  -> 11
-    # 9  -> 10
-    # 10 -> 9
-    # 11 -> 8
-    # 12 -> 7
-    # 13 -> 6
-    # 14 -> 5
-    # 15 -> 4
-    # 16 -> 3
-    # 17 -> 2
-    # 18 -> 1
-    # 19 -> 0
+    # Do this for all the lines in the array being cleared
     for line_index in range(len(line_indices)):
         for line in range(line_indices[line_index] + 1):
-            # line_index - line
             for x in range(len(board[0])):
                 if (line_indices[line_index] - line == 0):
                     board[0][x] = 0
@@ -359,11 +353,17 @@ def generate_piece(previous: int):
         random = randrange(7) + 1
     return random
 
+def make_lines_white(lines):
+    for line_index in range(len(lines)):
+        for x in range(len(board[lines[line_index]])):
+            board[lines[line_index]][x] = 8
+
 def main():
+    # Huge stack of globals because Python scope sucks
     global lines, level, score
-    global piece_num, piece_rotation, piece_position, last_piece_num, piece_array, next_piece_num
+    global piece_num, piece_rotation, piece_position, last_piece_num, piece_array, next_piece_num, state
     global ccw_last_frame, cw_last_frame, left_last_frame, right_last_frame, spawn_last_frame, release_down_since_last_piece
-    global das_counter, frames_since_last_drop, frames_since_last_piece, run, wall_charged
+    global das_counter, frames_since_last_drop, frames_since_last_piece, run, wall_charged, lines_to_clear, frames_since_line_clear
     pygame.init()
     clock = pygame.time.Clock()
     run = True
@@ -374,90 +374,120 @@ def main():
                 run = False
         keys_pressed = pygame.key.get_pressed()
 
+        # God mode
         if (keys_pressed[pygame.K_c] and not spawn_last_frame):
             spawn_piece(next_piece_num)
             next_piece_num = generate_piece(next_piece_num)
             continue
-
-        if (piece_num == 0):
-            if (frames_since_last_piece < 6):
+        
+        # Game loop
+        if (state == "first_frame"):
+            piece_num = generate_piece(0)
+            next_piece_num = generate_piece(piece_num)
+            state = "spawning"
+        if (state == "running"):
+            # Rotations
+            if (keys_pressed[pygame.K_z] and not ccw_last_frame):
+                attempt_transform_piece((0, 0), -1)
+            if (keys_pressed[pygame.K_x] and not cw_last_frame):
+                attempt_transform_piece((0, 0), 1)
+            
+            # DAS (Delayed Auto Shift) Management
+            if (keys_pressed[pygame.K_LEFT]):
+                if (left_last_frame):
+                    das_counter += 1
+                else:
+                    das_counter = 0
+                    attempt_transform_piece((-1, 0), 0)
+            if (keys_pressed[pygame.K_RIGHT]):
+                if (right_last_frame):
+                    das_counter += 1
+                else:
+                    das_counter = 0
+                    attempt_transform_piece((1, 0), 0)
+            if (das_counter >= 16):
+                if (keys_pressed[pygame.K_LEFT]):
+                    das_counter = 10
+                    attempt_transform_piece((-1, 0), 0)
+                if (keys_pressed[pygame.K_RIGHT]):
+                    das_counter = 10
+                    attempt_transform_piece((1, 0), 0)
+            if (das_counter > 16):
+                das_counter = 16
+            
+            # Piece Dropping
+            frames_since_last_drop += 1
+            if (frames_since_last_drop >= LEVEL_SPEEDS[level] or frames_since_last_drop >= 2 and keys_pressed[pygame.K_DOWN] and release_down_since_last_piece):
+                attempt_transform_piece((0, 1), 0)
+                frames_since_last_drop = 0
+            
+            # Check for Line Clears
+            line_count = 0
+            for y in board:
+                full = True
+                for x in y:
+                    if (x == 0):
+                        full = False
+                        break
+                if (full):
+                    line_count += 1
+            if (line_count != 0):
+                # Figure out which lines need to be cleared and add them to an array
+                line_list = [None] * line_count
+                for y in range(len(board)):
+                    full = True
+                    for x in board[y]:
+                        if (x == 0):
+                            full = False
+                            break
+                    if (full):
+                        for i in range(len(line_list)):
+                            if (line_list[i] == None):
+                                line_list[i] = y
+                                break
+                make_lines_white(line_list)
+                lines_to_clear = line_list
+                
+                # Scoring / Line Count / Level Changing
+                lines += line_count
+                if (line_count == 1):
+                    score += (40 * (level + 1))
+                elif (line_count == 2):
+                    score += (100 * (level + 1))
+                elif (line_count == 3):
+                    score += (300 * (level + 1))
+                elif (line_count == 4):
+                    score += (1200 * (level + 1))
+                else:
+                    print("WHAT THE HECK HOW DID YOU CLEAR MORE THAN FOUR OR LESS THAN ZERO LINES?????") # They just cracked
+                if (floor(lines / 10.0) > level):
+                    level = floor(lines / 10.0)
+                state = "clearing"
+                frames_since_line_clear = 0
+            elif (piece_num == 0):
+                state = "spawning"
+        elif (state == "clearing"):
+            if (frames_since_line_clear < 19):
+                frames_since_line_clear += 1
+            else:
+                clear_lines(lines_to_clear)
+                state = "spawning"
+                frames_since_last_piece = 0
+        elif (state == "spawning"):
+            if (frames_since_last_piece < 14):
                 frames_since_last_piece += 1
                 continue
             else:
                 spawn_piece(next_piece_num)
                 next_piece_num = generate_piece(next_piece_num)
                 continue
-
-        if (keys_pressed[pygame.K_z] and not ccw_last_frame):
-            attempt_transform_piece((0, 0), -1)
-        if (keys_pressed[pygame.K_x] and not cw_last_frame):
-            attempt_transform_piece((0, 0), 1)
+        elif (state == "paused"):
+            # Nothing to do here, it should all be handled in graphics since we're paused, what do you expect?
+            pass
         
-        if (keys_pressed[pygame.K_LEFT]):
-            if (left_last_frame):
-                das_counter += 1
-            else:
-                das_counter = 0
-                attempt_transform_piece((-1, 0), 0)
-        if (keys_pressed[pygame.K_RIGHT]):
-            if (right_last_frame):
-                das_counter += 1
-            else:
-                das_counter = 0
-                attempt_transform_piece((1, 0), 0)
-        if (das_counter >= 16):
-            if (keys_pressed[pygame.K_LEFT]):
-                das_counter = 10
-                attempt_transform_piece((-1, 0), 0)
-            if (keys_pressed[pygame.K_RIGHT]):
-                das_counter = 10
-                attempt_transform_piece((1, 0), 0)
-        if (das_counter > 16):
-            das_counter = 16
+        print("State: " + str(state))
+        print("Piece: " + str(piece_num))
         
-        frames_since_last_drop += 1
-        if (frames_since_last_drop >= LEVEL_SPEEDS[level] or frames_since_last_drop >= 2 and keys_pressed[pygame.K_DOWN] and release_down_since_last_piece):
-            attempt_transform_piece((0, 1), 0)
-            frames_since_last_drop = 0
-
-        piece_array = get_piece_array(rotation=piece_rotation, piece=piece_num)
-        
-        line_count = 0
-        for y in board:
-            full = True
-            for x in y:
-                if (x == 0):
-                    full = False
-                    break
-            if (full):
-                line_count += 1
-        if (line_count != 0):
-            line_list = [None] * line_count
-            for y in range(len(board)):
-                full = True
-                for x in board[y]:
-                    if (x == 0):
-                        full = False
-                        break
-                if (full):
-                    for i in range(len(line_list)):
-                        if (line_list[i] == None):
-                            line_list[i] = y
-                            break
-            clear_lines(line_list)
-            lines += line_count
-            if (line_count == 1):
-                score += (40 * (level + 1))
-            elif (line_count == 2):
-                score += (100 * (level + 1))
-            elif (line_count == 3):
-                score += (300 * (level + 1))
-            elif (line_count == 4):
-                score += (1200 * (level + 1))
-            else:
-                print("WHAT THE HECK HOW DID YOU CLEAR MORE THAN FOUR OR LESS THAN ZERO LINES?????")
-            if (floor(lines / 10.0) > level):
-                level = floor(lines / 10.0)
 
         get_piece_size()
         
