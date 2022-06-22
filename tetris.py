@@ -1,3 +1,4 @@
+from numpy import true_divide
 import pygame
 from random import randrange
 from constants.rotation import TetrisRotation
@@ -16,10 +17,11 @@ NEXT_SIZE = (TILE_SIZE * 4, TILE_SIZE * 4)
 
 # if (__name__ == "__main__"):
 pygame.init()
-tetris_sound = pygame.mixer.Sound("tetris.wav")
-burn_sound = pygame.mixer.Sound("burn.wav")
-move_sound = pygame.mixer.Sound("move.wav")
-spin_sound = pygame.mixer.Sound("spin.wav")
+tetris_sound = pygame.mixer.Sound("audio/tetris.wav")
+burn_sound = pygame.mixer.Sound("audio/burn.wav")
+move_sound = pygame.mixer.Sound("audio/move.wav")
+spin_sound = pygame.mixer.Sound("audio/spin.wav")
+level_transition_sound = pygame.mixer.Sound("audio/level-transition.wav")
 
 FPS = 60.0988
 
@@ -45,7 +47,7 @@ LEVEL_SPEEDS = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3,
 
 score = 0
 lines = 0
-level = 9
+level = 18
 
 piece_num = 0
 last_piece_num = 0
@@ -64,6 +66,7 @@ frames_since_last_piece = 100
 frames_since_line_clear = 100
 state = "first_frame"
 previous_state = "first_frame"
+changed_levels = False
 # States:
 # first_frame
 # running
@@ -371,7 +374,7 @@ def make_lines_white(lines):
 def main():
     # Huge stack of globals because Python scope sucks
     global lines, level, score
-    global piece_num, piece_rotation, piece_position, last_piece_num, piece_array, next_piece_num, state, pause_last_frame
+    global piece_num, piece_rotation, piece_position, last_piece_num, piece_array, next_piece_num, state, pause_last_frame, changed_levels
     global ccw_last_frame, cw_last_frame, left_last_frame, right_last_frame, spawn_last_frame, release_down_since_last_piece
     global das_counter, frames_since_last_drop, frames_since_last_piece, run, wall_charged, lines_to_clear, frames_since_line_clear, previous_state
     clock = pygame.time.Clock()
@@ -433,7 +436,10 @@ def main():
                 
                 # Piece Dropping
                 frames_since_last_drop += 1
-                if (frames_since_last_drop >= LEVEL_SPEEDS[level] or frames_since_last_drop >= 2 and keys_pressed[pygame.K_DOWN] and release_down_since_last_piece):
+                if (level >= 29):
+                    attempt_transform_piece((0, 1), 0)
+                    frames_since_last_drop = 0
+                elif (frames_since_last_drop >= LEVEL_SPEEDS[level] or frames_since_last_drop >= 2 and keys_pressed[pygame.K_DOWN] and release_down_since_last_piece):
                     attempt_transform_piece((0, 1), 0)
                     frames_since_last_drop = 0
                 
@@ -482,6 +488,9 @@ def main():
                         print("WHAT THE HECK HOW DID YOU CLEAR MORE THAN FOUR OR LESS THAN ZERO LINES?????") # They just cracked
                     if (floor(lines / 10.0) > level):
                         level = floor(lines / 10.0)
+                        changed_levels = True
+                    else:
+                        changed_levels = False
                     previous_state = state
                     state = "clearing"
                     frames_since_line_clear = 0
@@ -492,6 +501,9 @@ def main():
             if (frames_since_line_clear < 19):
                 frames_since_line_clear += 1
             else:
+                if (changed_levels):
+                    level_transition_sound.play()
+                    changed_levels = False
                 clear_lines(lines_to_clear)
                 previous_state = state
                 state = "spawning"
