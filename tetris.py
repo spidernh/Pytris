@@ -1,8 +1,6 @@
-from numpy import true_divide
 import pygame
 from random import randrange
 from constants.rotation import TetrisRotation
-from constants.board import TetrisBoard
 from math import floor
 
 WIDTH, HEIGHT = 780, 1000
@@ -41,13 +39,33 @@ COLOR_7 = (234, 25, 25) #  Z
 COLOR_8 = (255, 255, 255) # Line clear
 PIECE_COLORS = [BACKGROUND_COLOR, COLOR_1, COLOR_2, COLOR_3, COLOR_4, COLOR_5, COLOR_6, COLOR_7, COLOR_8]
 
-board = TetrisBoard.board
+board = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
 
 LEVEL_SPEEDS = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1]
 
 score = 0
 lines = 0
-level = 18
+level = 15
+selected_level = 0
 
 piece_num = 0
 last_piece_num = 0
@@ -58,21 +76,24 @@ piece_size = (0, 0)
 piece_size_offset = (0, 0)
 piece_array = [[0, 0],
                 [0, 0]]
+global_frame_count = 0
 
 lines_to_clear = [0, 0]
 das_counter = 0
 frames_since_last_drop = 0
 frames_since_last_piece = 100
 frames_since_line_clear = 100
-state = "first_frame"
-previous_state = "first_frame"
+state = "menu"
+previous_state = "menu"
 changed_levels = False
 # States:
-# first_frame
-# running
-# spawning
-# clearing
-# paused
+# first_frame  :  The first frame of the game
+# running      :  The normal running state
+# spawning     :  During the period after a piece finishes dropping, but before the next one spawns
+# clearing     :  Clearing a line (the white stuff)
+# paused       :  Paused
+# menu         :  The menu where one can level select
+# post_game   :  The menu to show a player's scores after their game
 
 ccw_last_frame = False
 cw_last_frame = False
@@ -81,6 +102,8 @@ right_last_frame = False
 spawn_last_frame = False
 release_down_since_last_piece = True
 pause_last_frame = False
+up_last_frame = False
+down_last_frame = False
 
 run = True
 wall_charged = False
@@ -139,7 +162,7 @@ def get_piece_array(rotation=piece_rotation, piece=piece_num):
     return piece_array
 
 def draw_window():
-    global piece_array, TEXT_COLOR, score, lines, level, state
+    global piece_array, TEXT_COLOR, score, lines, level, state, selected_level, global_frame_count
     WINDOW.fill(BACKGROUND_COLOR)
     
     if (state == "paused"):
@@ -149,7 +172,66 @@ def draw_window():
         WINDOW.blit(pause_text, (WIDTH / 2.0 - pause_text.get_width() / 2.0, HEIGHT / 2.0 - font_size / 2.0))
         pygame.display.update()
         return
+    elif (state == "post_game"):
+        font_size = 48
+        font = pygame.font.SysFont("impact", font_size)
+        score_text = font.render("SCORE", True, TEXT_COLOR)
+        score_disp = font.render(str(score), True, TEXT_COLOR)
+        line_text = font.render("LINE", True, TEXT_COLOR)
+        line_disp = font.render(str(lines), True, TEXT_COLOR)
+        level_text = font.render("LEVEL", True, TEXT_COLOR)
+        level_disp = font.render(str(level), True, TEXT_COLOR)
+        menu_button = font.render("ENTER TO CONTINUE", True, TEXT_COLOR)
+        WINDOW.blit(score_text, (WIDTH / 2.0 - score_text.get_width() / 2.0, 10))
+        WINDOW.blit(score_disp, (WIDTH / 2.0 - score_disp.get_width() / 2.0, 20 + font_size))
+        WINDOW.blit(line_text, (WIDTH / 2.0 - line_text.get_width() / 2.0, 30 + 2 * font_size))
+        WINDOW.blit(line_disp, (WIDTH / 2.0 - line_disp.get_width() / 2.0, 40 + 3 * font_size))
+        WINDOW.blit(level_text, (WIDTH / 2.0 - level_text.get_width() / 2.0, 50 + 4 * font_size))
+        WINDOW.blit(level_disp, (WIDTH / 2.0 - level_disp.get_width() / 2.0, 50 + 5 * font_size))
+        WINDOW.blit(menu_button, ((WIDTH - menu_button.get_width()) / 2.0, (HEIGHT - font_size) / 2.0))
+        pygame.display.update()
+        return
+    elif (state == "menu"):
+        level_font_size = 48
+        controls_font_size = 18
+        start_font_size = 72
+        level_font = pygame.font.SysFont("impact", level_font_size)
+        controls_font = pygame.font.SysFont("impact", controls_font_size)
+        start_font = pygame.font.SysFont("impact", start_font_size)
 
+        level_text = level_font.render("LEVEL", True, TEXT_COLOR)
+        level_disp = level_font.render(str(selected_level), True, TEXT_COLOR)
+        WINDOW.blit(level_text, (WIDTH / 2.0 - level_text.get_width() / 2.0, 20))
+        WINDOW.blit(level_disp, (WIDTH / 2.0 - level_disp.get_width() / 2.0, 40 + level_font_size))
+
+        game_controls_text = controls_font.render("GAME CONTROLS", True, TEXT_COLOR)
+        game_controls_left = controls_font.render("LEFT ARROW - MOVE PIECE LEFT", True, TEXT_COLOR)
+        game_controls_right = controls_font.render("RIGHT ARROW - MOVE PIECE RIGHT", True, TEXT_COLOR)
+        game_controls_down = controls_font.render("DOWN ARROW - Soft drop", True, TEXT_COLOR)
+        game_controls_z = controls_font.render("Z - SPIN COUNTER-CLOCKWISE", True, TEXT_COLOR)
+        game_controls_x = controls_font.render("X - SPIN CLOCKWISE", True, TEXT_COLOR)
+        game_controls_enter = controls_font.render("ENTER - PAUSE GAME", True, TEXT_COLOR)
+        WINDOW.blit(game_controls_text, (10, 10))
+        WINDOW.blit(game_controls_left, (10, 20 + controls_font_size))
+        WINDOW.blit(game_controls_right, (10, 30 + controls_font_size * 2))
+        WINDOW.blit(game_controls_down, (10, 40 + controls_font_size * 3))
+        WINDOW.blit(game_controls_z, (10, 50 + controls_font_size * 4))
+        WINDOW.blit(game_controls_x, (10, 60 + controls_font_size * 5))
+        WINDOW.blit(game_controls_enter, (10, 70 + controls_font_size * 6))
+
+        menu_controls_text = controls_font.render("MENU CONTROLS", True, TEXT_COLOR)
+        menu_controls_up = controls_font.render("UP - INCREASE LEVEL", True, TEXT_COLOR)
+        menu_controls_down = controls_font.render("DOWN - DECREASE LEVEL", True, TEXT_COLOR)
+        menu_controls_enter = start_font.render("ENTER TO START GAME", True, TEXT_COLOR)
+        WINDOW.blit(menu_controls_text, (WIDTH - 10 - menu_controls_text.get_width(), 10))
+        WINDOW.blit(menu_controls_up, (WIDTH - 10 - menu_controls_up.get_width(), 20 + controls_font_size))
+        WINDOW.blit(menu_controls_down, (WIDTH - 10 - menu_controls_down.get_width(), 30 + controls_font_size * 2))
+        blink_frequency = 1.2 * 60
+        if (global_frame_count % blink_frequency * 4 <= blink_frequency * 2):
+            WINDOW.blit(menu_controls_enter, ((WIDTH - menu_controls_enter.get_width()) / 2, (HEIGHT - start_font_size) / 2))
+        
+        pygame.display.update()
+        return
     # Draw tiles
     for y in range(20):
         for x in range(10):
@@ -249,7 +331,8 @@ def spawn_piece(piece_index: int):
         piece_rotation = 0
         piece_position = (4, -1)
     if (check_if_piece_collides(piece_position, piece_rotation)):
-        run = False
+        previous_state = state
+        state = "post_game"
 
 def clear_lines(line_indices):
     # Start at that line, make it the line above
@@ -373,7 +456,7 @@ def make_lines_white(lines):
 
 def main():
     # Huge stack of globals because Python scope sucks
-    global lines, level, score
+    global lines, level, score, global_frame_count, up_last_frame, down_last_frame, selected_level, board
     global piece_num, piece_rotation, piece_position, last_piece_num, piece_array, next_piece_num, state, pause_last_frame, changed_levels
     global ccw_last_frame, cw_last_frame, left_last_frame, right_last_frame, spawn_last_frame, release_down_since_last_piece
     global das_counter, frames_since_last_drop, frames_since_last_piece, run, wall_charged, lines_to_clear, frames_since_line_clear, previous_state
@@ -385,20 +468,87 @@ def main():
             if (event.type == pygame.QUIT):
                 run = False
         keys_pressed = pygame.key.get_pressed()
+        
+        global_frame_count += 1
 
         # God mode
         if (keys_pressed[pygame.K_c] and not spawn_last_frame):
             spawn_piece(next_piece_num)
             next_piece_num = generate_piece(next_piece_num)
-            continue
-        
         # Game loop
-        if (state == "first_frame"):
+        elif (state == "first_frame"):
             next_piece_num = generate_piece(0)
             pause_last_frame = True
             previous_state = state
-            state = "paused"
-        if (state == "running"):
+            state = "spawning"
+        elif (state == "post_game"):
+            if (keys_pressed[pygame.K_RETURN] and not pause_last_frame):
+                previous_state = state
+                state = "menu"
+                score = 0
+                lines = 0
+                level = 0
+                piece_num = 0
+                board = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+        elif (state == "menu"):
+            if (keys_pressed[pygame.K_RETURN] and not pause_last_frame):
+                previous_state = state
+                state = "first_frame"
+                level = selected_level
+            else:
+                if (keys_pressed[pygame.K_UP]):
+                    if (up_last_frame):
+                        das_counter += 1
+                    else:
+                        das_counter = 0
+                        selected_level += 1
+                        if (selected_level <= 29):
+                            move_sound.play()
+                if (keys_pressed[pygame.K_DOWN]):
+                    if (down_last_frame):
+                        das_counter += 1
+                    else:
+                        das_counter = 0
+                        selected_level -= 1
+                        if (selected_level >= 0):
+                            move_sound.play()
+                if (das_counter >= 16):
+                    if (keys_pressed[pygame.K_UP]):
+                        das_counter = 10
+                        selected_level += 1
+                        if (selected_level <= 29):
+                            move_sound.play()
+                    if (keys_pressed[pygame.K_DOWN]):
+                        das_counter = 10
+                        selected_level -= 1
+                        if (selected_level >= 0):
+                            move_sound.play()
+                if (das_counter > 16):
+                    das_counter = 16
+                if (selected_level > 29):
+                    selected_level = 29
+                elif (selected_level < 0):
+                    selected_level = 0
+        elif (state == "running"):
             # Pausing
             if (keys_pressed[pygame.K_RETURN] and not pause_last_frame):
                 previous_state = state
@@ -534,6 +684,8 @@ def main():
         cw_last_frame = keys_pressed[pygame.K_x]
         left_last_frame = keys_pressed[pygame.K_LEFT]
         right_last_frame = keys_pressed[pygame.K_RIGHT]
+        up_last_frame = keys_pressed[pygame.K_UP]
+        down_last_frame = keys_pressed[pygame.K_DOWN]
         spawn_last_frame = keys_pressed[pygame.K_c]
         release_down_since_last_piece = (not keys_pressed[pygame.K_DOWN]) or release_down_since_last_piece
         pause_last_frame = keys_pressed[pygame.K_RETURN]
